@@ -58,24 +58,30 @@ class Position(models.Model):
 class Transaction(models.Model):
     BUY = 'buy'
     SELL = 'sell'
+    DEPOSIT = 'deposit'
+    WITHDRAW = 'withdraw'
     TRANSACTION_TYPES = [
         (BUY, 'Buy'),
         (SELL, 'Sell'),
+        (DEPOSIT, 'Deposit'),
+        (WITHDRAW, 'Withdraw'),
     ]
     
     portfolio = models.ForeignKey(Portfolio, on_delete=models.CASCADE, related_name='transactions')
-    stock = models.ForeignKey(Stock, on_delete=models.CASCADE, related_name='transactions')
-    transaction_type = models.CharField(max_length=4, choices=TRANSACTION_TYPES)
-    quantity = models.PositiveIntegerField()
-    price = models.DecimalField(max_digits=15, decimal_places=2)
+    stock = models.ForeignKey(Stock, on_delete=models.CASCADE, related_name='transactions', null=True, blank=True)
+    transaction_type = models.CharField(max_length=10, choices=TRANSACTION_TYPES)
+    quantity = models.IntegerField()
+    price = models.DecimalField(max_digits=10, decimal_places=2)
     timestamp = models.DateTimeField(auto_now_add=True)
+    notes = models.CharField(max_length=255, blank=True, null=True)
     
     def __str__(self):
         return f"{self.transaction_type} {self.quantity} {self.stock.symbol} @ {self.price}"
     
+    @property
     def total_amount(self):
         """Calculate the total transaction amount"""
-        return self.quantity * self.price
+        return self.price * self.quantity
 
 
 class PortfolioSnapshot(models.Model):

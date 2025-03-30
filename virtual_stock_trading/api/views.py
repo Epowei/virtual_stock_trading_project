@@ -2,7 +2,7 @@ from django.shortcuts import render
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, status, permissions, filters
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from django.contrib.auth.models import User
 from .models import Stock, Portfolio, Position, Transaction, PortfolioSnapshot
@@ -11,6 +11,18 @@ from .serializers import (
     PositionSerializer, TransactionSerializer, UserSerializer
 )
 from .services.stock_service import StockService
+from django.contrib.auth.forms import UserCreationForm
+from django.views.generic.edit import CreateView
+from django.urls import reverse_lazy
+from django.contrib.auth.views import LoginView, LogoutView
+from django.shortcuts import render
+from django.contrib.auth.decorators import login_required
+from django.contrib import messages
+from django.shortcuts import redirect
+from datetime import datetime
+import random  # Add this import
+import decimal
+from decimal import Decimal  # Add this import at the top of the file
 
 
 class IsOwnerOrReadOnly(permissions.BasePermission):
@@ -349,3 +361,174 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 TransactionSerializer(transaction).data,
                 status=status.HTTP_201_CREATED
             )
+
+
+class RegisterView(CreateView):
+    form_class = UserCreationForm
+    template_name = 'api/register.html'
+    success_url = reverse_lazy('login')
+
+class CustomLoginView(LoginView):
+    template_name = 'api/login.html'
+    redirect_authenticated_user = True
+
+class CustomLogoutView(LogoutView):
+    next_page = 'login'
+
+def home_view(request):
+    """Home page view"""
+    return render(request, 'api/home.html')
+
+@login_required
+def portfolio_list_view(request):
+    """View to display all portfolios for the current user"""
+    # Handle portfolio creation from the form
+    if request.method == 'POST':
+        name = request.POST.get('name')
+        cash_balance = request.POST.get('cash_balance')
+        
+        if name and cash_balance:
+            try:
+                cash_balance = float(cash_balance)
+                portfolio = Portfolio.objects.create(
+                    user=request.user,
+                    name=name,
+                    cash_balance=cash_balance
+                )
+                messages.success(request, f"Portfolio '{name}' created successfully!")
+                return redirect('portfolio_detail', pk=portfolio.id)
+            except ValueError:
+                messages.error(request, "Invalid cash balance amount.")
+        else:
+            messages.error(request, "Please provide both name and initial balance.")
+    
+    # Get all user portfolios with calculated fields
+    portfolios = Portfolio.objects.filter(user=request.user)
+    
+    # Add calculated fields to each portfolio
+    for portfolio in portfolios:
+        # Calculate total value (cash + positions)
+        positions_value = sum(position.quantity * position.stock.last_price
+                             for position in portfolio.positions.all()
+                             if position.stock.last_price)
+        portfolio.total_value = portfolio.cash_balance + positions_value
+        
+        # Calculate profit/loss if we have portfolio snapshots
+        # This is simplified - in reality you'd compare with the first snapshot
+        # or initial investment
+        portfolio.profit_loss = portfolio.total_value - portfolio.cash_balance
+        if portfolio.cash_balance > 0:
+            portfolio.profit_loss_percentage = (portfolio.profit_loss / portfolio.cash_balance) * 100
+        else:
+            portfolio.profit_loss_percentage = 0
+    
+    return render(request, 'api/portfolio_list.html', {'portfolios': portfolios})
+
+@login_required
+def portfolio_detail_view(request, pk):
+    """View to display portfolio details"""
+    portfolio = get_object_or_404(Portfolio, pk=pk, user=request.user)
+    positions = portfolio.positions.all()
+    transactions = portfolio.transactions.order_by('-timestamp')[:10]  # Last 10 transactions
+    
+    return render(request, 'api/portfolio_detail.html', {
+        'portfolio': portfolio,
+        'positions': positions,
+        'transactions': transactions,
+    })
+
+@login_required
+def watchlist_view(request):
+    """View to display and manage stock watchlist"""
+    # For simplicity, we'll just show stock search functionality here
+    query = request.GET.get('q', '')
+    results = []
+    
+    if query:
+        results = StockService.search_stocks(query)
+    
+    return render(request, 'api/watchlist.html', {
+        'query': query,
+        'results': results,
+    })
+
+@api_view(['GET'])
+def stock_price_view(request, symbol):
+    """Get the current price for a stock"""
+    price_data = StockService.get_stock_data(symbol)
+    if price_data:
+        return Response({
+            'price': price_data.get('price', 0),
+            'change': price_data.get('change', 0),
+            'change_percent': price_data.get('change_percent', 0),
+            'updated_at': price_data.get('updated_at', datetime.now().isoformat())
+        })
+    
+    # If we can't get real data, return mock data for the ticker to display
+    return Response({
+        'price': 100 + (ord(symbol[0]) % 100),  # Generate mock price based on first letter
+        'change': random.uniform(-5, 5),
+        'change_percent': random.uniform(-2, 2),
+        'updated_at': datetime.now().isoformat()
+    })
+
+@login_required
+def portfolio_adjust_cash_view(request, pk):
+    """Handle deposits and withdrawals for a portfolio"""
+    import decimal  # Add this import here
+    
+    portfolio = get_object_or_404(Portfolio, id=pk, user=request.user)
+    
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        try:
+            amount = Decimal(request.POST.get('amount', 0))
+            note = request.POST.get('note', '')
+            
+            if amount <= 0:
+                messages.error(request, "Amount must be positive.")
+                return redirect('portfolio_detail', pk=portfolio.id)
+                
+            if action == 'deposit':
+                # Add to cash balance
+                portfolio.cash_balance += amount
+                messages.success(request, f"Successfully deposited ${amount:.2f} to your portfolio.")
+                
+                # Create a transaction record - use only fields that exist in the model
+                Transaction.objects.create(
+                    portfolio=portfolio,
+                    transaction_type='deposit',
+                    quantity=1,  # Not applicable for deposits
+                    price=amount,
+                    # Remove total_amount and notes if they don't exist
+                )
+                
+            elif action == 'withdraw':
+                # Check if there's enough cash
+                if amount > portfolio.cash_balance:
+                    messages.error(request, f"Insufficient funds. Your available cash balance is ${portfolio.cash_balance:.2f}.")
+                    return redirect('portfolio_detail', pk=portfolio.id)
+                
+                # Subtract from cash balance
+                portfolio.cash_balance -= amount
+                messages.success(request, f"Successfully withdrew ${amount:.2f} from your portfolio.")
+                
+                # Create a transaction record - use only fields that exist in the model
+                Transaction.objects.create(
+                    portfolio=portfolio,
+                    transaction_type='withdraw',
+                    quantity=1,  # Not applicable for withdrawals
+                    price=amount,
+                    # Remove total_amount and notes if they don't exist
+                )
+            else:
+                messages.error(request, "Invalid action.")
+                return redirect('portfolio_detail', pk=portfolio.id)
+            
+            # Save the portfolio
+            portfolio.save()
+            
+        except (ValueError, decimal.InvalidOperation) as e:
+            messages.error(request, f"Invalid amount: {str(e)}")
+    
+    return redirect('portfolio_detail', pk=portfolio.id)
