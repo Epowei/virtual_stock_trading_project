@@ -1,0 +1,579 @@
+{% extends 'api/base.html' %}
+
+{% block title %}{{ portfolio.name }} - Virtual Stock Trading{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'portfolio_list' %}">Portfolios</a></li>
+            <li class="breadcrumb-item active">{{ portfolio.name }}</li>
+        </ol>
+    </nav>
+
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h1>{{ portfolio.name }}</h1>
+            {% if portfolio.description %}
+            <p class="text-muted">{{ portfolio.description }}</p>
+            {% endif %}
+        </div>
+        <div class="col-md-4 text-md-end">
+            <button class="btn btn-primary me-2" type="button" data-bs-toggle="modal" data-bs-target="#buyStockModal">
+                <i class="bi bi-cart-plus"></i> Buy Stock
+            </button>
+            <div class="dropdown d-inline-block">
+                <button class="btn btn-outline-secondary dropdown-toggle" type="button" id="portfolioActionsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="bi bi-three-dots-vertical"></i>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="portfolioActionsDropdown">
+                    <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#editPortfolioModal"><i class="bi bi-pencil"></i> Edit Portfolio</a></li>
+                    <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#depositWithdrawModal"><i class="bi bi-currency-dollar"></i> Deposit/Withdraw</a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item text-danger" href="#" data-bs-toggle="modal" data-bs-target="#deletePortfolioModal"><i class="bi bi-trash"></i> Delete Portfolio</a></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-6 col-lg-3 mb-3">
+            <div class="card text-center h-100">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-2 text-muted">Cash Balance</h6>
+                    <h3 class="card-title">${{ portfolio.cash_balance|floatformat:2 }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 col-lg-3 mb-3">
+            <div class="card text-center h-100">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-2 text-muted">Stock Value</h6>
+                    <h3 class="card-title">${{ portfolio.total_stock_value|floatformat:2 }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 col-lg-3 mb-3">
+            <div class="card text-center h-100">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-2 text-muted">Total Value</h6>
+                    <h3 class="card-title">${{ portfolio.total_value|floatformat:2 }}</h3>
+                    {% with change=portfolio.get_total_change %}
+                        {% if change > 0 %}
+                            <p class="text-success mb-0"><i class="bi bi-arrow-up"></i> ${{ change|floatformat:2 }} ({{ portfolio.get_percent_change|floatformat:2 }}%)</p>
+                        {% elif change < 0 %}
+                            <p class="text-danger mb-0"><i class="bi bi-arrow-down"></i> ${{ change|floatformat:2|slice:"1:" }} ({{ portfolio.get_percent_change|floatformat:2|slice:"1:" }}%)</p>
+                        {% else %}
+                            <p class="text-muted mb-0">No change</p>
+                        {% endif %}
+                    {% endwith %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 col-lg-3 mb-3">
+            <div class="card text-center h-100">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-2 text-muted">Positions</h6>
+                    <h3 class="card-title">{{ positions.count }}</h3>
+                    <p class="card-text mb-0">{{ portfolio.get_diversification_pct|floatformat:0 }}% Diversified</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Positions Table -->
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Current Positions</h5>
+        </div>
+        <div class="card-body p-0">
+            {% if positions %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Company</th>
+                            <th>Quantity</th>
+                            <th>Avg. Buy Price</th>
+                            <th>Current Price</th>
+                            <th>Total Value</th>
+                            <th>Gain/Loss</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for position in positions %}
+                        <tr>
+                            <td><strong>{{ position.stock.symbol }}</strong></td>
+                            <td>{{ position.stock.company_name }}</td>
+                            <td>{{ position.quantity }}</td>
+                            <td>${{ position.average_buy_price|floatformat:2 }}</td>
+                            <td>${{ position.stock.last_price|floatformat:2 }}</td>
+                            <td>${{ position.current_value|floatformat:2 }}</td>
+                            <td>
+                                {% with gain_loss=position.gain_loss %}
+                                {% if gain_loss > 0 %}
+                                <span class="text-success">+${{ gain_loss|floatformat:2 }} ({{ position.gain_loss_pct|floatformat:2 }}%)</span>
+                                {% elif gain_loss < 0 %}
+                                <span class="text-danger">-${{ gain_loss|floatformat:2|slice:"1:" }} ({{ position.gain_loss_pct|floatformat:2|slice:"1:" }}%)</span>
+                                {% else %}
+                                <span class="text-muted">$0.00 (0.00%)</span>
+                                {% endif %}
+                                {% endwith %}
+                            </td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary" onclick="prepareSellModal('{{ position.stock.symbol }}', '{{ position.stock.company_name }}', {{ position.quantity }}, {{ position.stock.last_price }})">
+                                    <i class="bi bi-cart-dash"></i> Sell
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="p-4 text-center">
+                <p class="mb-3">You don't have any positions yet.</p>
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#buyStockModal">Buy Your First Stock</button>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Recent Transactions -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Recent Transactions</h5>
+            <a href="#" class="btn btn-sm btn-outline-primary">View All</a>
+        </div>
+        <div class="card-body p-0">
+            {% if transactions %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Type</th>
+                            <th>Symbol</th>
+                            <th>Quantity</th>
+                            <th>Price</th>
+                            <th>Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for transaction in transactions %}
+                        <tr>
+                            <td>{{ transaction.timestamp|date:"M d, Y H:i" }}</td>
+                            <td>
+                                {% if transaction.transaction_type == 'buy' %}
+                                <span class="badge bg-success">BUY</span>
+                                {% elif transaction.transaction_type == 'sell' %}
+                                <span class="badge bg-danger">SELL</span>
+                                {% elif transaction.transaction_type == 'deposit' %}
+                                <span class="badge bg-primary">DEPOSIT</span>
+                                {% elif transaction.transaction_type == 'withdraw' %}
+                                <span class="badge bg-warning">WITHDRAW</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if transaction.stock %}
+                                    {{ transaction.stock.symbol }}
+                                {% else %}
+                                    Cash Transaction
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if transaction.transaction_type == 'deposit' or transaction.transaction_type == 'withdraw' %}
+                                    -
+                                {% else %}
+                                    {{ transaction.quantity }}
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if transaction.transaction_type == 'deposit' or transaction.transaction_type == 'withdraw' %}
+                                    -
+                                {% else %}
+                                    ${{ transaction.price|floatformat:2 }}
+                                {% endif %}
+                            </td>
+                            <td>${{ transaction.total_amount|floatformat:2 }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="p-4 text-center">
+                <p>No transaction history yet.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Buy Stock Modal -->
+<div class="modal fade" id="buyStockModal" tabindex="-1" aria-labelledby="buyStockModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="buyStockModalLabel">Buy Stock</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="stockSearch" class="form-label">Search for a stock</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="stockSearch" placeholder="Enter symbol or company name">
+                        <button class="btn btn-outline-primary" type="button" id="searchStockButton">Search</button>
+                    </div>
+                </div>
+
+                <div id="searchResults" style="display: none;" class="mb-3">
+                    <h6 class="mb-2">Search Results:</h6>
+                    <div class="list-group" id="stockSearchResults"></div>
+                </div>
+
+                <form id="buyForm" style="display: none;">
+                    <input type="hidden" name="transaction_type" value="buy">
+                    <input type="hidden" name="stock_symbol" id="buyStockSymbol">
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Selected Stock</label>
+                        <div class="d-flex justify-content-between border rounded p-3">
+                            <div>
+                                <span id="buyStockDisplay"></span> (<span id="buyStockSymbolDisplay"></span>)
+                            </div>
+                            <div>
+                                <span id="buyStockPrice"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="buyQuantity" class="form-label">Quantity</label>
+                        <input type="number" class="form-control" id="buyQuantity" name="quantity" min="1" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Estimated Total</label>
+                        <div class="form-control" id="buyTotal">$0.00</div>
+                    </div>
+
+                    <div class="alert alert-info">
+                        Available Cash: ${{ portfolio.cash_balance|floatformat:2 }}
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" id="confirmBuyButton" disabled>Buy Stock</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Sell Stock Modal -->
+<div class="modal fade" id="sellStockModal" tabindex="-1" aria-labelledby="sellStockModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="sellStockModalLabel">Sell Stock</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="sellForm">
+                    <input type="hidden" name="transaction_type" value="sell">
+                    <input type="hidden" name="stock_symbol" id="sellStockSymbol">
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Stock</label>
+                        <div class="d-flex justify-content-between border rounded p-3">
+                            <div>
+                                <span id="sellStockDisplay"></span> (<span id="sellStockSymbolDisplay"></span>)
+                            </div>
+                            <div>
+                                <span id="sellStockPrice"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="sellQuantity" class="form-label">Quantity to Sell</label>
+                        <input type="range" class="form-range" id="sellQuantityRange" min="1" max="100" value="1">
+                        <div class="d-flex justify-content-between">
+                            <input type="number" class="form-control w-25" id="sellQuantity" name="quantity" min="1" value="1">
+                            <button type="button" class="btn btn-outline-primary btn-sm" id="sellMaxButton">Sell All</button>
+                        </div>
+                        <div class="form-text">You own <span id="sellMaxQuantity">0</span> shares</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Estimated Proceeds</label>
+                        <div class="form-control" id="sellTotal">$0.00</div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmSellButton">Sell Stock</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Deposit/Withdraw Modal -->
+<div class="modal fade" id="depositWithdrawModal" tabindex="-1" aria-labelledby="depositWithdrawModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="depositWithdrawModalLabel">Manage Portfolio Cash</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <ul class="nav nav-pills mb-3" id="fundsTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="deposit-tab" data-bs-toggle="pill" data-bs-target="#deposit-content" type="button" role="tab" aria-controls="deposit-content" aria-selected="true">Deposit</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="withdraw-tab" data-bs-toggle="pill" data-bs-target="#withdraw-content" type="button" role="tab" aria-controls="withdraw-content" aria-selected="false">Withdraw</button>
+                    </li>
+                </ul>
+                
+                <div class="tab-content" id="fundsTabContent">
+                    <!-- Deposit Tab -->
+                    <div class="tab-pane fade show active" id="deposit-content" role="tabpanel" aria-labelledby="deposit-tab">
+                        <form id="depositForm" method="post" action="{% url 'portfolio_adjust_cash' portfolio.id %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="deposit">
+                            
+                            <div class="mb-3">
+                                <label for="depositAmount" class="form-label">Amount to Deposit</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">$</span>
+                                    <input type="number" class="form-control" id="depositAmount" name="amount" min="100" step="100" value="1000" required>
+                                </div>
+                                <div class="form-text">Minimum deposit: $100</div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="depositNote" class="form-label">Note (Optional)</label>
+                                <input type="text" class="form-control" id="depositNote" name="note" placeholder="e.g., Monthly investment">
+                            </div>
+                            
+                            <div class="d-grid">
+                                <button type="submit" class="btn btn-success">Complete Deposit</button>
+                            </div>
+                        </form>
+                    </div>
+                    
+                    <!-- Withdraw Tab -->
+                    <div class="tab-pane fade" id="withdraw-content" role="tabpanel" aria-labelledby="withdraw-tab">
+                        <form id="withdrawForm" method="post" action="{% url 'portfolio_adjust_cash' portfolio.id %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="withdraw">
+                            
+                            <div class="mb-3">
+                                <label for="withdrawAmount" class="form-label">Amount to Withdraw</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">$</span>
+                                    <input type="number" class="form-control" id="withdrawAmount" name="amount" min="100" step="100" max="{{ portfolio.cash_balance }}" value="1000" required>
+                                </div>
+                                <div class="form-text">Available cash: ${{ portfolio.cash_balance|floatformat:2 }}</div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="withdrawNote" class="form-label">Note (Optional)</label>
+                                <input type="text" class="form-control" id="withdrawNote" name="note" placeholder="e.g., Taking profits">
+                            </div>
+                            
+                            <div class="d-grid">
+                                <button type="submit" class="btn btn-warning" id="withdrawButton">Complete Withdrawal</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // JavaScript functions for the modal interactions
+    function prepareSellModal(symbol, name, quantity, price) {
+        // Populate the sell modal with the selected stock info
+        document.getElementById('sellStockSymbol').value = symbol;
+        document.getElementById('sellStockDisplay').textContent = name;
+        document.getElementById('sellStockSymbolDisplay').textContent = symbol;
+        document.getElementById('sellStockPrice').textContent = '$' + price.toFixed(2);
+        document.getElementById('sellMaxQuantity').textContent = quantity;
+        
+        // Set up the quantity slider
+        const quantityRange = document.getElementById('sellQuantityRange');
+        quantityRange.max = quantity;
+        quantityRange.value = 1;
+        
+        // Set up the quantity input
+        const quantityInput = document.getElementById('sellQuantity');
+        quantityInput.max = quantity;
+        quantityInput.value = 1;
+        updateSellTotal(1, price);
+        
+        // Add event listener for quantity changes
+        quantityRange.addEventListener('input', function() {
+            quantityInput.value = this.value;
+            updateSellTotal(this.value, price);
+        });
+        
+        quantityInput.addEventListener('input', function() {
+            quantityRange.value = this.value;
+            updateSellTotal(this.value, price);
+        });
+        
+        document.getElementById('sellMaxButton').addEventListener('click', function() {
+            quantityRange.value = quantity;
+            quantityInput.value = quantity;
+            updateSellTotal(quantity, price);
+        });
+    }
+    
+    function updateSellTotal(quantity, price) {
+        const total = quantity * price;
+        document.getElementById('sellTotal').textContent = '$' + total.toFixed(2);
+    }
+    
+    // Stock search functionality
+    document.getElementById('searchStockButton').addEventListener('click', function() {
+        const query = document.getElementById('stockSearch').value.trim();
+        if (query) {
+            // Make AJAX request to search stocks
+            fetch(`/api/stocks/search/?q=${encodeURIComponent(query)}`)
+                .then(response => response.json())
+                .then(data => {
+                    displaySearchResults(data);
+                })
+                .catch(error => {
+                    console.error('Error searching stocks:', error);
+                });
+        }
+    });
+    
+    function displaySearchResults(results) {
+        const resultsDiv = document.getElementById('searchResults');
+        resultsDiv.style.display = 'block';
+        resultsDiv.innerHTML = '';
+        
+        if (results.length === 0) {
+            resultsDiv.innerHTML = '<div class="alert alert-warning">No stocks found matching your search.</div>';
+            return;
+        }
+        
+        const listGroup = document.createElement('div');
+        listGroup.className = 'list-group';
+        
+        results.forEach(stock => {
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'list-group-item list-group-item-action';
+            item.innerHTML = `<strong>${stock.symbol}</strong> - ${stock.name} (${stock.region})`;
+            
+            item.addEventListener('click', function() {
+                selectStockToBuy(stock.symbol, stock.name);
+            });
+            
+            listGroup.appendChild(item);
+        });
+        
+        resultsDiv.appendChild(listGroup);
+    }
+    
+    function selectStockToBuy(symbol, name) {
+        // Get current price for the selected stock
+        fetch(`/api/stocks/${symbol}/price/`)
+            .then(response => response.json())
+            .then(data => {
+                const price = parseFloat(data.price);
+                document.getElementById('buyStockSymbol').value = symbol;
+                document.getElementById('buyStockDisplay').textContent = name;
+                document.getElementById('buyStockSymbolDisplay').textContent = symbol;
+                document.getElementById('buyStockPrice').textContent = '$' + price.toFixed(2);
+                
+                // Show the buy form
+                document.getElementById('buyForm').style.display = 'block';
+                
+                // Hide search results
+                document.getElementById('searchResults').style.display = 'none';
+                
+                // Set up quantity change listener
+                const quantityInput = document.getElementById('buyQuantity');
+                quantityInput.value = 1;
+                quantityInput.addEventListener('input', function() {
+                    updateBuyTotal(this.value, price);
+                });
+                
+                // Initialize total
+                updateBuyTotal(1, price);
+            })
+            .catch(error => {
+                console.error('Error fetching stock price:', error);
+                alert('Unable to fetch current price for this stock. Please try again later.');
+            });
+    }
+
+    function updateBuyTotal(quantity, price) {
+        const total = quantity * price;
+        document.getElementById('buyTotal').textContent = '$' + total.toFixed(2);
+        
+        // Check if user has enough balance
+        const availableBalance = parseFloat('{{ portfolio.cash_balance }}');
+        const confirmButton = document.getElementById('confirmBuyButton');
+        
+        if (total > availableBalance) {
+            confirmButton.disabled = true;
+            confirmButton.classList.add('btn-secondary');
+            confirmButton.classList.remove('btn-success');
+            confirmButton.textContent = 'Insufficient Funds';
+        } else {
+            confirmButton.disabled = false;
+            confirmButton.classList.add('btn-success');
+            confirmButton.classList.remove('btn-secondary');
+            confirmButton.textContent = 'Buy Stock';
+        }
+    }
+
+    // Add keyboard support for stock search
+    document.getElementById('stockSearch').addEventListener('keypress', function(event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            document.getElementById('searchStockButton').click();
+        }
+    });
+
+    // Initialize Bootstrap tooltips
+    document.addEventListener('DOMContentLoaded', function () {
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+    });
+
+    // Add this to your existing JavaScript
+    document.addEventListener('DOMContentLoaded', function() {
+        // Limit withdraw amount to available cash
+        const withdrawAmountInput = document.getElementById('withdrawAmount');
+        const withdrawButton = document.getElementById('withdrawButton');
+        const availableCash = {{ portfolio.cash_balance }};
+        
+        if (withdrawAmountInput) {
+            withdrawAmountInput.addEventListener('input', function() {
+                const withdrawAmount = parseFloat(this.value);
+                if (withdrawAmount > availableCash) {
+                    this.value = availableCash;
+                    alert('You cannot withdraw more than your available cash balance.');
+                }
+            });
+        }
+    });
+</script>
+
+{% endblock %}

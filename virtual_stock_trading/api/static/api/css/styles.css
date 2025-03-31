@@ -1,0 +1,288 @@
+:root {
+  --primary: #2e4057;
+  --secondary: #4da167;
+  --light: #f8f9fa;
+  --dark: #212529;
+  --success: #4da167;
+  --danger: #e76f51;
+  --warning: #f4a261;
+  --info: #2a9d8f;
+}
+
+/* Main Styles for Virtual Stock Trading Platform */
+
+/* Global Styling */
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background-color: #f8f9fa;
+  color: #212529;
+}
+
+.navbar {
+  background-color: var(--primary);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.navbar-brand {
+  font-weight: 700;
+  color: white !important;
+}
+
+/* Card styling */
+.card {
+  border: none;
+  border-radius: 0.5rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+  transition: transform 0.3s ease;
+}
+
+.card:hover {
+  transform: translateY(-5px);
+}
+
+.card-header {
+  background-color: rgba(0, 0, 0, 0.03);
+  font-weight: 500;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.125);
+}
+
+.portfolio-summary {
+  background-color: #fff;
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+  margin-bottom: 1.5rem;
+}
+
+.stock-price-up {
+  color: #198754;
+}
+
+.stock-price-down {
+  color: #dc3545;
+}
+
+.position-row:hover {
+  background-color: rgba(13, 110, 253, 0.05);
+}
+
+.btn-circle {
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border-radius: 50%;
+  line-height: 2.5rem;
+  text-align: center;
+}
+
+.search-form {
+  margin-bottom: 1.5rem;
+}
+
+.alert {
+  border-radius: 0.25rem;
+}
+
+.btn-primary {
+  background-color: #0d6efd;
+  border-color: #0d6efd;
+}
+
+.btn-primary:hover {
+  background-color: #0b5ed7;
+  border-color: #0a58ca;
+}
+
+.btn-success {
+  background-color: var(--success);
+  border-color: var(--success);
+}
+
+.text-success {
+  color: var(--success) !important;
+}
+
+.text-danger {
+  color: var(--danger) !important;
+}
+
+.stock-symbol {
+  font-weight: 700;
+}
+
+.stock-name {
+  font-size: 0.9rem;
+  color: #6c757d;
+}
+
+.portfolio-header {
+  background: linear-gradient(135deg, var(--primary) 0%, #1d2b3c 100%);
+  color: white;
+  padding: 2rem;
+  border-radius: 0.5rem;
+  margin-bottom: 2rem;
+}
+
+.watchlist-header {
+  background: linear-gradient(135deg, var(--primary) 0%, #1d2b3c 100%);
+  color: white;
+  padding: 2rem;
+  border-radius: 0.5rem;
+  margin-bottom: 2rem;
+}
+
+.dashboard-stat {
+  text-align: center;
+  padding: 1.5rem;
+}
+
+.dashboard-stat h3 {
+  font-size: 1.8rem;
+  margin-bottom: 0;
+}
+
+.dashboard-stat p {
+  margin-bottom: 0;
+  color: #6c757d;
+}
+
+.transaction-item {
+  border-left: 4px solid transparent;
+  padding-left: 1rem;
+}
+
+.transaction-buy {
+  border-left-color: var(--success);
+}
+
+.transaction-sell {
+  border-left-color: var(--danger);
+}
+
+/* Table improvements */
+.table {
+  margin-bottom: 0;
+}
+
+.table th {
+  font-weight: 600;
+  border-top: none;
+}
+
+.table-hover tbody tr:hover {
+  background-color: rgba(0, 0, 0, 0.02);
+}
+
+/* Dashboard metrics */
+.metric-card {
+  transition: transform 0.2s;
+}
+
+.metric-card:hover {
+  transform: translateY(-5px);
+}
+
+/* Form elements */
+.form-control:focus {
+  border-color: #80bdff;
+  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+/* Button customization */
+.btn {
+  border-radius: 0.25rem;
+}
+
+/* Positive/negative values */
+.text-profit {
+  color: #198754;
+}
+
+.text-loss {
+  color: #dc3545;
+}
+
+/* Responsive improvements */
+@media (max-width: 768px) {
+  .table-responsive {
+    overflow-x: auto;
+  }
+}
+
+/* Page headers */
+.page-header {
+  padding-bottom: 0.5rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid #dee2e6;
+}
+
+/* Custom dropdown styling */
+.dropdown-item:active {
+  background-color: #0d6efd;
+}
+
+/* Form validation styling */
+.was-validated .form-control:invalid,
+.form-control.is-invalid {
+  border-color: #dc3545;
+  box-shadow: none;
+}
+
+/* Stock price changes */
+.price-up {
+  color: #198754;
+}
+
+.price-down {
+  color: #dc3545;
+}
+
+/* Stock Ticker Styles */
+.stock-ticker-container {
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.ticker-wrap {
+    width: 100%;
+    overflow: hidden;
+    height: 2rem;
+    margin: 0;
+    padding: 0;
+}
+
+.ticker {
+    display: flex;
+    white-space: nowrap;
+    animation: ticker 30s linear infinite;
+}
+
+.ticker-item {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 1.5rem;
+    font-size: 0.9rem;
+}
+
+.ticker-item strong {
+    margin-right: 0.5rem;
+}
+
+.ticker-item span {
+    margin: 0 0.25rem;
+}
+
+@keyframes ticker {
+    0% {
+        transform: translateX(0);
+    }
+    100% {
+        transform: translateX(-100%);
+    }
+}
+
+/* When ticker is hovered, pause the animation */
+.ticker-wrap:hover .ticker {
+    animation-play-state: paused;
+}

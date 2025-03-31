@@ -1,0 +1,401 @@
+{% extends 'api/base.html' %}
+
+{% block title %}Stock Watchlist - Virtual Stock Trading{% endblock %}
+
+{% block content %}
+<!-- Live Stock Ticker -->
+<div class="stock-ticker-container bg-dark text-white py-2 mb-4">
+    <div class="container">
+        <div class="d-flex align-items-center">
+            <span class="me-3"><i class="bi bi-graph-up text-success"></i> Live Market:</span>
+            <div class="ticker-wrap">
+                <div class="ticker" id="stockTicker">
+                    <!-- Ticker items will be inserted here via JavaScript -->
+                    <div class="ticker-item">Loading stock data...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="container py-4">
+    <h1 class="mb-4">Stock Watchlist</h1>
+
+    <!-- Search Box -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" action="{% url 'watchlist' %}">
+                <div class="row g-3 align-items-center">
+                    <div class="col-md-8">
+                        <div class="input-group">
+                            <input type="search" name="q" id="q" class="form-control" placeholder="Search for stocks..." value="{{ query }}">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-search"></i> Search
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-md-4 text-md-end">
+                        <span class="form-text">
+                            Search by symbol or company name
+                        </span>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Search Results -->
+    {% if query %}
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">Search Results for "{{ query }}"</h5>
+        </div>
+        <div class="card-body p-0">
+            {% if results %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Name</th>
+                            <th>Type</th>
+                            <th>Region</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for stock in results %}
+                        <tr>
+                            <td><strong>{{ stock.symbol }}</strong></td>
+                            <td>{{ stock.name }}</td>
+                            <td>{{ stock.type }}</td>
+                            <td>{{ stock.region }}</td>
+                            <td>
+                                <div class="btn-group" role="group">
+                                    <button type="button" class="btn btn-sm btn-outline-primary" 
+                                            onclick="showBuyModal('{{ stock.symbol }}', '{{ stock.name }}')">
+                                        <i class="bi bi-cart-plus"></i> Buy
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="p-4 text-center">
+                <p class="mb-0">No stocks found matching "{{ query }}".</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% else %}
+    <!-- Introduction section when no search has been performed -->
+    <div class="card">
+        <div class="card-body text-center p-5">
+            <h3>Welcome to the Stock Watchlist</h3>
+            <p class="lead">Search for stocks above to view current information and add them to your portfolio.</p>
+            <p>You can search by company name (e.g. "Apple") or by stock symbol (e.g. "AAPL").</p>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Buy Stock Modal -->
+<div class="modal fade" id="buyStockModal" tabindex="-1" aria-labelledby="buyStockModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="buyStockModalLabel">Buy Stock</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="portfolioSelectContainer">
+                    <div class="mb-3">
+                        <label for="portfolioSelect" class="form-label">Select Portfolio</label>
+                        <select class="form-select" id="portfolioSelect" required>
+                            <option value="" selected disabled>Choose a portfolio</option>
+                            {% for portfolio in user.portfolio_set.all %}
+                            <option value="{{ portfolio.id }}">{{ portfolio.name }} (${{ portfolio.cash_balance|floatformat:2 }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                
+                <form id="buyForm" style="display: none;">
+                    <input type="hidden" name="transaction_type" value="buy">
+                    <input type="hidden" name="stock_symbol" id="buyStockSymbol">
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Selected Stock</label>
+                        <div class="d-flex justify-content-between border rounded p-3">
+                            <div>
+                                <span id="buyStockDisplay"></span> (<span id="buyStockSymbolDisplay"></span>)
+                            </div>
+                            <div>
+                                <span id="buyStockPrice"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="buyQuantity" class="form-label">Quantity</label>
+                        <input type="number" class="form-control" id="buyQuantity" name="quantity" min="1" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Estimated Total</label>
+                        <div class="form-control" id="buyTotal">$0.00</div>
+                    </div>
+
+                    <div class="alert alert-info">
+                        Available Cash: <span id="availableCash">$0.00</span>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" id="confirmBuyButton">Buy Stock</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function showBuyModal(symbol, name) {
+        // Show portfolio selector first
+        document.getElementById('portfolioSelect').selectedIndex = 0;
+        document.getElementById('portfolioSelectContainer').style.display = 'block';
+        document.getElementById('buyForm').style.display = 'none';
+        document.getElementById('confirmBuyButton').disabled = true;
+        
+        // Set the stock symbol for later use
+        document.getElementById('buyStockSymbol').value = symbol;
+        document.getElementById('buyStockDisplay').textContent = name;
+        document.getElementById('buyStockSymbolDisplay').textContent = symbol;
+        
+        // Show the modal
+        new bootstrap.Modal(document.getElementById('buyStockModal')).show();
+        
+        // Add event listener to portfolio selection
+        document.getElementById('portfolioSelect').addEventListener('change', function() {
+            const portfolioId = this.value;
+            if (portfolioId) {
+                // Get portfolio cash balance
+                const option = this.options[this.selectedIndex];
+                const cashBalanceText = option.text.match(/\(\$([0-9,.]+)\)/)[1];
+                const cashBalance = parseFloat(cashBalanceText.replace(/,/g, ''));
+                document.getElementById('availableCash').textContent = '$' + cashBalance.toFixed(2);
+                
+                // Fetch current stock price
+                fetch(`/stocks/${symbol}/price/`)
+                    .then(response => response.json())
+                    .then(data => {
+                        const price = parseFloat(data.price);
+                        document.getElementById('buyStockPrice').textContent = '$' + price.toFixed(2);
+                        
+                        // Show buy form
+                        document.getElementById('portfolioSelectContainer').style.display = 'none';
+                        document.getElementById('buyForm').style.display = 'block';
+                        document.getElementById('confirmBuyButton').disabled = false;
+                        
+                        // Set up quantity change handler
+                        const quantityInput = document.getElementById('buyQuantity');
+                        quantityInput.value = 1;
+                        quantityInput.addEventListener('input', function() {
+                            updateBuyTotal(this.value, price, cashBalance);
+                        });
+                        
+                        // Initialize total
+                        updateBuyTotal(1, price, cashBalance);
+                        
+                        // Set up buy button handler
+                        document.getElementById('confirmBuyButton').onclick = function() {
+                            const quantity = parseInt(quantityInput.value);
+                            if (quantity <= 0) {
+                                alert('Please enter a valid quantity.');
+                                return;
+                            }
+                            
+                            // Submit the order
+                            const formData = new FormData();
+                            formData.append('transaction_type', 'buy');
+                            formData.append('stock_symbol', symbol);
+                            formData.append('quantity', quantity);
+                            formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+                            
+                            fetch(`/api/portfolios/${portfolioId}/transactions/`, {
+                                method: 'POST',
+                                body: formData,
+                                headers: {
+                                    'X-CSRFToken': '{{ csrf_token }}',
+                                }
+                            })
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.error) {
+                                    alert('Error: ' + data.error);
+                                } else {
+                                    alert('Purchase successful!');
+                                    window.location.href = `/api/portfolios/${portfolioId}/`;
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Error:', error);
+                                alert('An error occurred while processing your order.');
+                            });
+                        };
+                    })
+                    .catch(error => {
+                        console.error('Error fetching stock price:', error);
+                        alert('Unable to fetch current price for this stock.');
+                    });
+            }
+        });
+    }
+    
+    function updateBuyTotal(quantity, price, cashBalance) {
+        const total = quantity * price;
+        document.getElementById('buyTotal').textContent = '$' + total.toFixed(2);
+        
+        // Check if user has enough balance
+        const confirmButton = document.getElementById('confirmBuyButton');
+        
+        if (total > cashBalance) {
+            confirmButton.disabled = true;
+            confirmButton.classList.add('btn-secondary');
+            confirmButton.classList.remove('btn-success');
+            confirmButton.textContent = 'Insufficient Funds';
+        } else {
+            confirmButton.disabled = false;
+            confirmButton.classList.add('btn-success');
+            confirmButton.classList.remove('btn-secondary');
+            confirmButton.textContent = 'Buy Stock';
+        }
+    }
+
+    // Stock Ticker Implementation
+    document.addEventListener('DOMContentLoaded', function() {
+        // Popular stocks to display in ticker
+        const popularStocks = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'FB', 'NVDA', 'JPM', 'V', 'JNJ'];
+        
+        // Initialize ticker with loading message
+        const tickerElement = document.getElementById('stockTicker');
+        
+        // Function to update ticker with latest stock prices
+        function updateStockTicker() {
+            // Clear previous content
+            tickerElement.innerHTML = '';
+            
+            // Fetch each stock price
+            popularStocks.forEach(symbol => {
+                fetch(`/stocks/${symbol}/price/`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.error) {
+                            console.error(`Error fetching ${symbol}:`, data.error);
+                            return;
+                        }
+                        
+                        const price = parseFloat(data.price);
+                        const change = parseFloat(data.change || 0);
+                        const changePercent = parseFloat(data.change_percent || 0);
+                        
+                        // Create ticker item
+                        const tickerItem = document.createElement('div');
+                        tickerItem.className = 'ticker-item';
+                        
+                        // Determine price change class (up/down)
+                        let changeClass = 'text-secondary';
+                        let changeIcon = '<i class="bi bi-dash"></i>';
+                        
+                        if (change > 0) {
+                            changeClass = 'text-success';
+                            changeIcon = '<i class="bi bi-caret-up-fill"></i>';
+                        } else if (change < 0) {
+                            changeClass = 'text-danger';
+                            changeIcon = '<i class="bi bi-caret-down-fill"></i>';
+                        }
+                        
+                        // Format the ticker item HTML
+                        tickerItem.innerHTML = `
+                            <strong>${symbol}</strong> 
+                            <span>$${price.toFixed(2)}</span> 
+                            <span class="${changeClass}">
+                                ${changeIcon} ${change.toFixed(2)} (${changePercent.toFixed(2)}%)
+                            </span>
+                        `;
+                        
+                        // Add to ticker
+                        tickerElement.appendChild(tickerItem);
+                    })
+                    .catch(error => {
+                        console.error(`Error fetching ${symbol}:`, error);
+                        const errorItem = document.createElement('div');
+                        errorItem.className = 'ticker-item';
+                        errorItem.innerHTML = `<strong>${symbol}</strong> <span>Unavailable</span>`;
+                        tickerElement.appendChild(errorItem);
+                    });
+            });
+        }
+        
+        // Initial update
+        updateStockTicker();
+        
+        // Update every 60 seconds (to respect API rate limits)
+        setInterval(updateStockTicker, 60000);
+    });
+</script>
+
+<style>
+/* Stock Ticker Styles */
+.stock-ticker-container {
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.ticker-wrap {
+    width: 100%;
+    overflow: hidden;
+    height: 2rem;
+    margin: 0;
+    padding: 0;
+}
+
+.ticker {
+    display: flex;
+    white-space: nowrap;
+    animation: ticker 30s linear infinite;
+}
+
+.ticker-item {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 1.5rem;
+    font-size: 0.9rem;
+}
+
+.ticker-item strong {
+    margin-right: 0.5rem;
+}
+
+.ticker-item span {
+    margin: 0 0.25rem;
+}
+
+@keyframes ticker {
+    0% {
+        transform: translateX(0);
+    }
+    100% {
+        transform: translateX(-100%);
+    }
+}
+
+/* When ticker is hovered, pause the animation */
+.ticker-wrap:hover .ticker {
+    animation-play-state: paused;
+}
+</style>
+{% endblock %}
