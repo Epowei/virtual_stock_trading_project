@@ -10,3 +10,5 @@ whitenoise==6.5.0
 dj-database-url==2.1.0
 psycopg2-binary==2.9.9  # For PostgreSQL
 python-dotenv==1.0.0
+yfinance==0.2.55
+drf-nested-routers

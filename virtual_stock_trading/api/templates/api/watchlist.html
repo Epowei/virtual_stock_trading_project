@@ -3,6 +3,7 @@
 {% block title %}Stock Watchlist - Virtual Stock Trading{% endblock %}
 
 {% block content %}
+
 <!-- Live Stock Ticker -->
 <div class="stock-ticker-container bg-dark text-white py-2 mb-4">
     <div class="container">
@@ -116,8 +117,10 @@
                         <label for="portfolioSelect" class="form-label">Select Portfolio</label>
                         <select class="form-select" id="portfolioSelect" required>
                             <option value="" selected disabled>Choose a portfolio</option>
-                            {% for portfolio in user.portfolio_set.all %}
+                            {% for portfolio in portfolios %}
                             <option value="{{ portfolio.id }}">{{ portfolio.name }} (${{ portfolio.cash_balance|floatformat:2 }})</option>
+                            {% empty %}
+                            <option value="" disabled>No portfolios available</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -163,6 +166,7 @@
 </div>
 
 <script>
+    // Replace the showBuyModal function
     function showBuyModal(symbol, name) {
         // Show portfolio selector first
         document.getElementById('portfolioSelect').selectedIndex = 0;
@@ -178,8 +182,13 @@
         // Show the modal
         new bootstrap.Modal(document.getElementById('buyStockModal')).show();
         
+        // Remove existing event listeners by cloning and replacing the element
+        const portfolioSelect = document.getElementById('portfolioSelect');
+        const newSelect = portfolioSelect.cloneNode(true);
+        portfolioSelect.parentNode.replaceChild(newSelect, portfolioSelect);
+        
         // Add event listener to portfolio selection
-        document.getElementById('portfolioSelect').addEventListener('change', function() {
+        newSelect.addEventListener('change', function() {
             const portfolioId = this.value;
             if (portfolioId) {
                 // Get portfolio cash balance
@@ -212,38 +221,76 @@
                         
                         // Set up buy button handler
                         document.getElementById('confirmBuyButton').onclick = function() {
-                            const quantity = parseInt(quantityInput.value);
-                            if (quantity <= 0) {
-                                alert('Please enter a valid quantity.');
-                                return;
-                            }
+                            // Show loading state
+                            this.disabled = true;
+                            this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Processing...';
                             
-                            // Submit the order
-                            const formData = new FormData();
-                            formData.append('transaction_type', 'buy');
-                            formData.append('stock_symbol', symbol);
-                            formData.append('quantity', quantity);
-                            formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+                            // Get the form data
+                            const portfolioId = document.getElementById('portfolioSelect').value;
+                            const symbol = document.getElementById('buyStockSymbol').value;
+                            const quantity = parseInt(document.getElementById('buyQuantity').value);
+                            const price = parseFloat(document.getElementById('buyStockPrice').textContent.replace('$', ''));
                             
-                            fetch(`/api/portfolios/${portfolioId}/transactions/`, {
+                            // Create transaction data
+                            const data = {
+                                transaction_type: 'buy',
+                                stock_symbol: symbol,
+                                quantity: quantity,
+                                price: price
+                            };
+                            
+                            // Send the request
+                            fetch(`/transaction/${portfolioId}/`, {
                                 method: 'POST',
-                                body: formData,
                                 headers: {
-                                    'X-CSRFToken': '{{ csrf_token }}',
-                                }
+                                    'Content-Type': 'application/json',
+                                    'X-CSRFToken': getCookie('csrftoken')
+                                },
+                                body: JSON.stringify(data)
                             })
-                            .then(response => response.json())
-                            .then(data => {
-                                if (data.error) {
-                                    alert('Error: ' + data.error);
-                                } else {
-                                    alert('Purchase successful!');
-                                    window.location.href = `/api/portfolios/${portfolioId}/`;
+                            .then(response => {
+                                console.log("Response status:", response.status);
+                                
+                                // Log the raw response for debugging
+                                response.clone().text().then(text => {
+                                    console.log("Raw response:", text);
+                                });
+                                
+                                if (!response.ok) {
+                                    return response.json().then(data => {
+                                        console.error("Error data:", data);
+                                        throw new Error(data.error || 'Transaction failed');
+                                    });
                                 }
+                                return response.json();
+                            })
+                            .then(data => {
+                                // Success - show confirmation and refresh the page
+                                const modal = bootstrap.Modal.getInstance(document.getElementById('buyStockModal'));
+                                modal.hide();
+                                
+                                // Show success message
+                                const alertBox = document.createElement('div');
+                                alertBox.className = 'alert alert-success alert-dismissible fade show';
+                                alertBox.innerHTML = `
+                                    <strong>Success!</strong> You purchased ${quantity} shares of ${symbol}.
+                                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                `;
+                                document.querySelector('.container').prepend(alertBox);
+                                
+                                // Redirect to portfolio detail after a short delay
+                                setTimeout(() => {
+                                    window.location.href = `/portfolios/${portfolioId}/`;
+                                }, 1500);
                             })
                             .catch(error => {
                                 console.error('Error:', error);
-                                alert('An error occurred while processing your order.');
+                                // Reset button
+                                this.disabled = false;
+                                this.textContent = 'Confirm Purchase';
+                                
+                                // Show error message
+                                alert(error.message || 'An error occurred while processing your order.');
                             });
                         };
                     })
@@ -346,6 +393,13 @@
         // Update every 60 seconds (to respect API rate limits)
         setInterval(updateStockTicker, 60000);
     });
+
+    // helper function to get CSRF token
+    function getCookie(name) {
+        let value = "; " + document.cookie;
+        let parts = value.split("; " + name + "=");
+        if (parts.length === 2) return parts.pop().split(";").shift();
+    }
 </script>
 
 <style>

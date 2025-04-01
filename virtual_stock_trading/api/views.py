@@ -23,6 +23,10 @@ from datetime import datetime
 import random  # Add this import
 import decimal
 from decimal import Decimal  # Add this import at the top of the file
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+import json
+from django.utils import timezone
 
 
 class IsOwnerOrReadOnly(permissions.BasePermission):
@@ -72,7 +76,8 @@ class StockViewSet(viewsets.ReadOnlyModelViewSet):
         Get the latest price for a stock.
         """
         stock = self.get_object()
-        updated_stock = StockService.get_stock_data(stock.symbol)
+        updated_stock = StockService.get_stock_price(stock.symbol)
+        # updated_stock = StockService.get_stock_data(stock.symbol)
         
         if not updated_stock:
             return Response(
@@ -81,11 +86,18 @@ class StockViewSet(viewsets.ReadOnlyModelViewSet):
             )
         
         return Response({
-            'symbol': updated_stock.symbol,
-            'company_name': updated_stock.company_name,
-            'price': updated_stock.last_price,
-            'last_updated': updated_stock.last_updated
+            'symbol': stock.symbol,
+            'company_name': stock.company_name,
+            'price': updated_stock.get('price', 0),
+            'last_updated': updated_stock.get('updated_at', datetime.now().isoformat())
         })
+        
+        # return Response({
+        #     'symbol': updated_stock.symbol,
+        #     'company_name': updated_stock.company_name,
+        #     'price': updated_stock.last_price,
+        #     'last_updated': updated_stock.last_updated
+        # })
 
 
 class PortfolioViewSet(viewsets.ModelViewSet):
@@ -181,7 +193,7 @@ class PositionViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         portfolio_id = self.kwargs.get('portfolio_pk')
-        if portfolio_id:
+        if (portfolio_id):
             portfolio = get_object_or_404(Portfolio, id=portfolio_id, user=self.request.user)
             return Position.objects.filter(portfolio=portfolio)
         return Position.objects.filter(portfolio__user=self.request.user)
@@ -206,161 +218,94 @@ class PositionViewSet(viewsets.ModelViewSet):
 
 
 class TransactionViewSet(viewsets.ModelViewSet):
-    """
-    API endpoint for transactions.
-    Allows creating new buy/sell transactions.
-    """
     serializer_class = TransactionSerializer
-    permission_classes = [permissions.IsAuthenticated, IsOwnerOrReadOnly]
+    permission_classes = [permissions.IsAuthenticated]
     
     def get_queryset(self):
-        portfolio_id = self.kwargs.get('portfolio_pk')
-        if portfolio_id:
-            portfolio = get_object_or_404(Portfolio, id=portfolio_id, user=self.request.user)
-            return Transaction.objects.filter(portfolio=portfolio)
-        return Transaction.objects.filter(portfolio__user=self.request.user)
+        portfolio_pk = self.kwargs.get('portfolio_pk')
+        if portfolio_pk:
+            return Transaction.objects.filter(portfolio_id=portfolio_pk)
+        return Transaction.objects.none()
     
     def create(self, request, *args, **kwargs):
-        portfolio_id = request.data.get('portfolio') or self.kwargs.get('portfolio_pk')
-        if not portfolio_id:
-            return Response(
-                {"error": "Portfolio ID is required"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        print("Transaction create method called!")  # Debug log
+        portfolio_pk = self.kwargs.get('portfolio_pk')
         
         try:
-            portfolio = Portfolio.objects.get(id=portfolio_id, user=request.user)
-        except Portfolio.DoesNotExist:
-            return Response(
-                {"error": "Portfolio not found or access denied"},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        # Extract and validate transaction details
-        stock_symbol = request.data.get('stock_symbol')
-        transaction_type = request.data.get('transaction_type')
-        quantity = request.data.get('quantity')
-        
-        if not all([stock_symbol, transaction_type, quantity]):
-            return Response(
-                {"error": "Stock symbol, transaction type, and quantity are required"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        try:
-            quantity = int(quantity)
-            if quantity <= 0:
-                raise ValueError
-        except (ValueError, TypeError):
-            return Response(
-                {"error": "Quantity must be a positive integer"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        if transaction_type not in [Transaction.BUY, Transaction.SELL]:
-            return Response(
-                {"error": f"Transaction type must be either '{Transaction.BUY}' or '{Transaction.SELL}'"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Get current stock data
-        stock_data = StockService.get_stock_data(stock_symbol)
-        if not stock_data:
-            return Response(
-                {"error": f"Could not fetch current price for {stock_symbol}"},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE
-            )
-        
-        # Get stock object from database
-        try:
-            stock = Stock.objects.get(symbol=stock_symbol.upper())
-        except Stock.DoesNotExist:
-            # Create new stock if it doesn't exist
-            stock = Stock(
-                symbol=stock_symbol.upper(),
-                company_name=stock_data.company_name,
-                last_price=stock_data.last_price,
-                last_updated=stock_data.last_updated
-            )
-            stock.save()
-        
-        # Execute the transaction with database transaction for atomicity
-        with transaction.atomic():
-            # Check if the user has enough cash for buy or enough shares for sell
-            position = None
-            try:
-                position = Position.objects.get(portfolio=portfolio, stock=stock)
-            except Position.DoesNotExist:
-                if transaction_type == Transaction.SELL:
-                    return Response(
-                        {"error": f"You don't own any shares of {stock.symbol}"},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
+            # Get the portfolio and verify ownership
+            portfolio = Portfolio.objects.get(id=portfolio_pk, user=request.user)
             
-            total_cost = quantity * stock.last_price
+            # Extract data
+            data = request.data
+            symbol = data.get('stock_symbol')
+            quantity = int(data.get('quantity', 0))
+            price = float(data.get('price', 0))
+            transaction_type = data.get('transaction_type', 'buy')
             
-            if transaction_type == Transaction.BUY:
-                if portfolio.cash_balance < total_cost:
-                    return Response(
-                        {"error": "Insufficient funds to complete transaction"},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-                
-                # Update portfolio cash balance
-                portfolio.cash_balance -= total_cost
-                portfolio.save()
-                
-                # Update or create position
-                if position:
-                    # Calculate new average buy price
-                    total_shares = position.quantity + quantity
-                    total_investment = (position.average_buy_price * position.quantity) + total_cost
-                    new_avg_price = total_investment / total_shares
-                    
-                    position.quantity = total_shares
-                    position.average_buy_price = new_avg_price
-                    position.save()
-                else:
-                    position = Position(
-                        portfolio=portfolio,
-                        stock=stock,
-                        quantity=quantity,
-                        average_buy_price=stock.last_price
-                    )
-                    position.save()
+            # Get or create stock
+            stock, created = Stock.objects.get_or_create(
+                symbol=symbol,
+                defaults={
+                    'company_name': symbol,
+                    'last_price': price,
+                    'last_updated': timezone.now()
+                }
+            )
             
-            elif transaction_type == Transaction.SELL:
-                if position.quantity < quantity:
-                    return Response(
-                        {"error": f"You only have {position.quantity} shares to sell"},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-                
-                # Update portfolio cash balance
-                portfolio.cash_balance += total_cost
-                portfolio.save()
-                
-                # Update position
-                position.quantity -= quantity
-                if position.quantity == 0:
-                    position.delete()
-                else:
-                    position.save()
+            # Calculate total
+            total_cost = price * quantity
+            
+            # Check if portfolio has enough funds
+            if transaction_type == 'buy' and portfolio.cash_balance < total_cost:
+                return Response({"error": f"Insufficient funds. Need ${total_cost} but have ${portfolio.cash_balance}"}, status=400)
             
             # Create transaction record
-            transaction = Transaction(
+            transaction = Transaction.objects.create(
                 portfolio=portfolio,
                 stock=stock,
                 transaction_type=transaction_type,
                 quantity=quantity,
-                price=stock.last_price
+                price=price
             )
-            transaction.save()
             
-            return Response(
-                TransactionSerializer(transaction).data,
-                status=status.HTTP_201_CREATED
-            )
+            # Update portfolio balance
+            if transaction_type == 'buy':
+                portfolio.cash_balance -= total_cost
+            else:  # sell
+                portfolio.cash_balance += total_cost
+            
+            portfolio.save()
+            
+            # Update or create position
+            if transaction_type == 'buy':
+                position, created = Position.objects.get_or_create(
+                    portfolio=portfolio,
+                    stock=stock,
+                    defaults={'quantity': 0, 'average_buy_price': 0}
+                )
+                
+                # Update position
+                if created:
+                    position.quantity = quantity
+                    position.average_buy_price = price
+                else:
+                    # Update average price
+                    total_shares = position.quantity + quantity
+                    position.average_buy_price = ((position.average_buy_price * position.quantity) + 
+                                              (price * quantity)) / total_shares
+                    position.quantity = total_shares
+                
+                position.save()
+                
+            return Response({
+                "success": True,
+                "message": f"Successfully purchased {quantity} shares of {symbol}",
+                "transaction_id": transaction.id
+            }, status=201)
+            
+        except Exception as e:
+            print(f"Transaction error: {str(e)}")
+            return Response({"error": str(e)}, status=400)
 
 
 class RegisterView(CreateView):
@@ -439,23 +384,40 @@ def portfolio_detail_view(request, pk):
 
 @login_required
 def watchlist_view(request):
-    """View to display and manage stock watchlist"""
-    # For simplicity, we'll just show stock search functionality here
     query = request.GET.get('q', '')
-    results = []
+    search_results = []
     
     if query:
-        results = StockService.search_stocks(query)
+        response = StockService.search_stocks(query)
+        search_results = response.get('results', [])
+        print(f"Found {len(search_results)} stocks matching '{query}'")
+    
+    # Get price data for popular stocks to display by default
+    popular_symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'JPM', 'V', 'JNJ']
+    popular_stocks = []
+    
+    for symbol in popular_symbols:
+        price_data = StockService.get_stock_price(symbol)
+        popular_stocks.append({
+            'symbol': symbol,
+            'price': price_data.get('price', 0)
+        })
+    
+    # Get user's portfolios (add this line)
+    # Use prefetch_related to optimize database queries
+    user_portfolios = Portfolio.objects.filter(user=request.user)
     
     return render(request, 'api/watchlist.html', {
         'query': query,
-        'results': results,
+        'results': search_results,
+        'popular_stocks': popular_stocks,
+        'portfolios': user_portfolios,  # Add portfolios to context
     })
 
 @api_view(['GET'])
 def stock_price_view(request, symbol):
     """Get the current price for a stock"""
-    price_data = StockService.get_stock_data(symbol)
+    price_data = StockService.get_stock_price(symbol)
     if price_data:
         return Response({
             'price': price_data.get('price', 0),
@@ -532,3 +494,218 @@ def portfolio_adjust_cash_view(request, pk):
             messages.error(request, f"Invalid amount: {str(e)}")
     
     return redirect('portfolio_detail', pk=portfolio.id)
+
+@csrf_exempt
+def transaction_create_view(request):
+    """Handle transaction creation via AJAX"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST method is allowed'}, status=405)
+        
+    try:
+        data = json.loads(request.body)
+        portfolio_id = data.get('portfolio_id', request.user.portfolios.first().id)
+        symbol = data.get('stock_symbol')
+        quantity = int(data.get('quantity', 0))
+        price = float(data.get('price', 0))
+        transaction_type = data.get('transaction_type')
+        
+        # Get or create the stock
+        stock, created = Stock.objects.get_or_create(
+            symbol=symbol,
+            defaults={
+                'company_name': symbol,  # Use symbol as name temporarily
+                'last_price': price,
+                'last_updated': timezone.now()
+            }
+        )
+        
+        # If stock exists but price is outdated, update it
+        if not created:
+            stock.last_price = price
+            stock.last_updated = timezone.now()
+            stock.save()
+        
+        # Get portfolio
+        portfolio = Portfolio.objects.get(id=portfolio_id, user=request.user)
+        
+        # Process transaction based on type
+        if transaction_type == 'buy':
+            # Calculate total cost
+            total_cost = price * quantity
+            
+            # Check if user has enough balance
+            if portfolio.cash_balance < total_cost:
+                return JsonResponse({'error': 'Insufficient funds'}, status=400)
+                
+            # Update portfolio balance
+            portfolio.cash_balance -= total_cost
+            portfolio.save()
+            
+            # Create transaction record
+            transaction = Transaction.objects.create(
+                portfolio=portfolio,
+                stock=stock,
+                transaction_type='buy',
+                quantity=quantity,
+                price=price
+            )
+            
+            # Create or update position
+            position, created = Position.objects.get_or_create(
+                portfolio=portfolio,
+                stock=stock,
+                defaults={
+                    'quantity': quantity,
+                    'average_buy_price': price
+                }
+            )
+            
+            if not created:
+                # Update existing position
+                new_quantity = position.quantity + quantity
+                position.average_buy_price = ((position.average_buy_price * position.quantity) + 
+                                          (price * quantity)) / new_quantity
+                position.quantity = new_quantity
+                position.save()
+                
+        # For now, we only support buy
+        else:
+            return JsonResponse({'error': 'Unsupported transaction type'}, status=400)
+            
+        return JsonResponse({
+            'success': True,
+            'transaction_id': transaction.id,
+            'new_cash_balance': float(portfolio.cash_balance)
+        }, status=201)
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+import json
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.utils import timezone
+from decimal import Decimal  # Add this import
+
+@csrf_exempt  # Only for testing - use proper CSRF protection in production
+def create_transaction_view(request, portfolio_id):
+    """Direct view function for creating transactions"""
+    if request.method != 'POST':
+        return JsonResponse({"error": "Only POST method is allowed"}, status=405)
+    
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "Authentication required"}, status=401)
+        
+    try:
+        # Parse JSON body
+        data = json.loads(request.body)
+        symbol = data.get('stock_symbol')
+        quantity = int(data.get('quantity', 0))
+        price = float(data.get('price', 0))
+        transaction_type = data.get('transaction_type', 'buy')
+        
+        # Convert price to Decimal to match model field type
+        price_decimal = Decimal(str(price))  # Convert via string to avoid float precision issues
+        
+        # Get portfolio and verify ownership
+        try:
+            portfolio = Portfolio.objects.get(id=portfolio_id, user=request.user)
+        except Portfolio.DoesNotExist:
+            return JsonResponse({"error": f"Portfolio with ID {portfolio_id} not found or access denied"}, status=404)
+            
+        # Get or create stock
+        stock, created = Stock.objects.get_or_create(
+            symbol=symbol,
+            defaults={
+                'company_name': symbol,
+                'last_price': price_decimal,  # Use decimal
+                'last_updated': timezone.now()
+            }
+        )
+        
+        # Calculate total cost using Decimal
+        total_cost = price_decimal * Decimal(quantity)
+        
+        # Check if portfolio has enough funds for buy
+        if transaction_type == 'buy' and portfolio.cash_balance < total_cost:
+            return JsonResponse({
+                "error": f"Insufficient funds. Need ${total_cost:.2f} but have ${portfolio.cash_balance:.2f}"
+            }, status=400)
+            
+        # Create transaction record
+        transaction = Transaction.objects.create(
+            portfolio=portfolio,
+            stock=stock,
+            transaction_type=transaction_type,
+            quantity=quantity,
+            price=price_decimal  # Use decimal
+        )
+        
+        # Update portfolio balance
+        if transaction_type == 'buy':
+            portfolio.cash_balance -= total_cost
+        else:  # sell
+            portfolio.cash_balance += total_cost
+        
+        portfolio.save()
+        
+        # Update or create position
+        if transaction_type == 'buy':
+            position, created = Position.objects.get_or_create(
+                portfolio=portfolio,
+                stock=stock,
+                defaults={'quantity': 0, 'average_buy_price': Decimal('0.00')}
+            )
+            
+            # Update position
+            if created:
+                position.quantity = quantity
+                position.average_buy_price = price_decimal
+            else:
+                # Update average price using Decimal
+                total_shares = position.quantity + quantity
+                position.average_buy_price = ((position.average_buy_price * Decimal(position.quantity)) + 
+                                          (price_decimal * Decimal(quantity))) / Decimal(total_shares)
+                position.quantity = total_shares
+            
+            position.save()
+            
+        return JsonResponse({
+            "success": True,
+            "message": f"Successfully purchased {quantity} shares of {symbol}",
+            "transaction_id": transaction.id,
+            "new_balance": float(portfolio.cash_balance)
+        }, status=201)
+        
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON data"}, status=400)
+    except Exception as e:
+        print(f"Transaction error: {str(e)}")
+        return JsonResponse({"error": str(e)}, status=500)
+
+@login_required
+def stock_search_view(request):
+    """API endpoint for searching stocks"""
+    query = request.GET.get('q', '')
+    if not query:
+        return JsonResponse({'results': []})
+    
+    results = StockService.search_stocks(query)
+    return JsonResponse({'results': results.get('results', [])})
+
+from django.http import JsonResponse
+
+@login_required
+def stock_search_api_view(request):
+    """API endpoint that returns stock search results as JSON"""
+    query = request.GET.get('q', '')
+    if not query:
+        return JsonResponse({'results': []})
+    
+    response = StockService.search_stocks(query)
+    results = response.get('results', [])
+    
+    # Log success for debugging
+    print(f"API search found {len(results)} results for '{query}'")
+    
+    return JsonResponse({'results': results})

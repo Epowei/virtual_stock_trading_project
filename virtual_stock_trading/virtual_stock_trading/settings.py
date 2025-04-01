@@ -82,7 +82,7 @@ TEMPLATES = [
 WSGI_APPLICATION = 'virtual_stock_trading.wsgi.application'
 
 
-# Database
+# Database for local deployment commented out
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
 # DATABASES = {

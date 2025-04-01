@@ -55,7 +55,7 @@ virtual_stock_trading/
 ## Features
 
 - User authentication and portfolio management
-- Real-time stock data via Alpha Vantage API
+- Real-time stock data via Finnhub API
 - Buy/sell operations with transaction history
 - Portfolio performance tracking
 - RESTful API design with Django REST Framework
@@ -77,7 +77,7 @@ source stock/bin/activate
 ```bash
 # Create .env file in the project root
 echo "SECRET_KEY=your_secret_key_here
-ALPHA_VANTAGE_API_KEY=your_alpha_vantage_api_key
+FINNHUB_API_KEY=your_alpha_vantage_api_key
 DEBUG=True" > .env
 ```
 
@@ -161,7 +161,7 @@ __Deployment on Render__
 
 3. Add environment variables:
     * `SECRET_KEY:` Your Django secret key
-    * `ALPHA_VANTAGE_API_KEY:` Your Alpha Vantage API key
+    * `FINNHUB_API_KEY:` Your Finnhub API key
     * `DEBUG`: Set to False for production
     * `ALLOWED_HOSTS`: Add your Render domain, e.g., your-app.onrender.com
     * `DATABASE_URL`: This will be automatically added if you use Render's PostgreSQL
@@ -190,7 +190,7 @@ __Deployment on Render__
 5. Submit a pull request
 
 ### Acknowledgements
-* Alpha Vantage for providing stock market data
+* Finnhub.io for providing stock market data
 * Django and Django REST Framework
 * Bootstrap for the UI components
 

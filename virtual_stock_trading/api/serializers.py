@@ -31,14 +31,30 @@ class PositionSerializer(serializers.ModelSerializer):
         return obj.profit_loss()
 
 class TransactionSerializer(serializers.ModelSerializer):
-    stock_symbol = serializers.CharField(write_only=True)
-    stock = StockSerializer(read_only=True)
+    stock_symbol = serializers.CharField(write_only=True, required=False)
     
     class Meta:
         model = Transaction
-        fields = ['id', 'stock', 'stock_symbol', 'transaction_type', 
-                  'quantity', 'price', 'timestamp']
-        read_only_fields = ['id', 'price', 'timestamp']
+        fields = ['id', 'portfolio', 'stock', 'transaction_type', 'quantity', 'price', 'timestamp', 'stock_symbol']
+        read_only_fields = ['id', 'timestamp']
+    
+    def create(self, validated_data):
+        # Extract and remove stock_symbol if it exists
+        stock_symbol = validated_data.pop('stock_symbol', None)
+        
+        # If stock_symbol was provided, get or create the stock
+        if stock_symbol:
+            stock, created = Stock.objects.get_or_create(
+                symbol=stock_symbol,
+                defaults={
+                    'company_name': stock_symbol,
+                    'last_price': validated_data.get('price', 0),
+                    'last_updated': timezone.now()
+                }
+            )
+            validated_data['stock'] = stock
+            
+        return super().create(validated_data)
 
 class PortfolioSerializer(serializers.ModelSerializer):
     total_value = serializers.SerializerMethodField()

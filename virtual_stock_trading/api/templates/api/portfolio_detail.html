@@ -419,11 +419,12 @@
         quantityInput.value = 1;
         updateSellTotal(1, price);
         
-        // Add event listener for quantity changes
+        // event listener for quantity changes
         quantityRange.addEventListener('input', function() {
             quantityInput.value = this.value;
             updateSellTotal(this.value, price);
         });
+        // Ensure this closing brace and parenthesis match an earlier opening brace or parenthesis
         
         quantityInput.addEventListener('input', function() {
             quantityRange.value = this.value;
@@ -446,22 +447,29 @@
     document.getElementById('searchStockButton').addEventListener('click', function() {
         const query = document.getElementById('stockSearch').value.trim();
         if (query) {
-            // Make AJAX request to search stocks
+            // Show loading state
+            const searchResults = document.getElementById('searchResults');
+            searchResults.style.display = 'block';
+            searchResults.innerHTML = '<div class="text-center"><div class="spinner-border spinner-border-sm" role="status"></div> Searching...</div>';
+            
+            // Use our dedicated API endpoint instead of parsing HTML
             fetch(`/api/stocks/search/?q=${encodeURIComponent(query)}`)
                 .then(response => response.json())
                 .then(data => {
-                    displaySearchResults(data);
+                    console.log("Search results:", data.results);
+                    displaySearchResults(data.results || []);
                 })
                 .catch(error => {
                     console.error('Error searching stocks:', error);
+                    document.getElementById('searchResults').innerHTML = '<div class="alert alert-danger">Error searching stocks. Please try again.</div>';
                 });
         }
     });
-    
+
+    // Update the displaySearchResults function to use the API response format
     function displaySearchResults(results) {
         const resultsDiv = document.getElementById('searchResults');
         resultsDiv.style.display = 'block';
-        resultsDiv.innerHTML = '';
         
         if (results.length === 0) {
             resultsDiv.innerHTML = '<div class="alert alert-warning">No stocks found matching your search.</div>';
@@ -475,21 +483,22 @@
             const item = document.createElement('button');
             item.type = 'button';
             item.className = 'list-group-item list-group-item-action';
-            item.innerHTML = `<strong>${stock.symbol}</strong> - ${stock.name} (${stock.region})`;
+            item.innerHTML = `<strong>${stock.symbol}</strong> - ${stock.name || stock.description} (${stock.type || stock.currency || stock.region || 'Stock'})`;
             
             item.addEventListener('click', function() {
-                selectStockToBuy(stock.symbol, stock.name);
+                selectStockToBuy(stock.symbol, stock.name || stock.description);
             });
             
             listGroup.appendChild(item);
         });
         
+        resultsDiv.innerHTML = '';
         resultsDiv.appendChild(listGroup);
     }
     
     function selectStockToBuy(symbol, name) {
         // Get current price for the selected stock
-        fetch(`/api/stocks/${symbol}/price/`)
+        fetch(`/stocks/${symbol}/price/`)
             .then(response => response.json())
             .then(data => {
                 const price = parseFloat(data.price);
@@ -541,7 +550,7 @@
         }
     }
 
-    // Add keyboard support for stock search
+    // keyboard support for stock search
     document.getElementById('stockSearch').addEventListener('keypress', function(event) {
         if (event.key === 'Enter') {
             event.preventDefault();
@@ -557,7 +566,6 @@
         });
     });
 
-    // Add this to your existing JavaScript
     document.addEventListener('DOMContentLoaded', function() {
         // Limit withdraw amount to available cash
         const withdrawAmountInput = document.getElementById('withdrawAmount');
@@ -573,6 +581,94 @@
                 }
             });
         }
+    });
+
+    // Code to handle the buy stock form submission
+    document.getElementById('confirmBuyButton').addEventListener('click', function() {
+        // Show loading state
+        this.disabled = true;
+        this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Processing...';
+        
+        // Get the form data
+        const portfolioId = {{ portfolio.id }};
+        const symbol = document.getElementById('buyStockSymbol').value;
+        const quantity = parseInt(document.getElementById('buyQuantity').value);
+        const priceText = document.getElementById('buyStockPrice').textContent;
+        const price = parseFloat(priceText.replace('$', ''));
+        
+        // Create transaction data
+        const data = {
+            portfolio_id: portfolioId,
+            transaction_type: 'buy',
+            stock_symbol: symbol,
+            quantity: quantity,
+            price: price
+        };
+        
+        // Get CSRF token
+        const csrftoken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+        
+        // Send the request
+        fetch('/transaction/' + portfolioId + '/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrftoken
+            },
+            body: JSON.stringify(data)
+        })
+        .then(response => {
+            console.log("Response status:", response.status);
+            
+            // Log the raw response for debugging
+            response.clone().text().then(text => {
+                console.log("Raw response:", text);
+            });
+            
+            if (!response.ok) {
+                return response.json().then(data => {
+                    throw new Error(data.error || 'Transaction failed');
+                });
+            }
+            return response.json();
+        })
+        .then(data => {
+            // Success - show confirmation and refresh the page
+            const modal = bootstrap.Modal.getInstance(document.getElementById('buyStockModal'));
+            modal.hide();
+            
+            // Show success message
+            const alertBox = document.createElement('div');
+            alertBox.className = 'alert alert-success alert-dismissible fade show';
+            alertBox.innerHTML = `
+                <strong>Success!</strong> You purchased ${quantity} shares of ${symbol}.
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            `;
+            document.querySelector('.container').prepend(alertBox);
+            
+            // Refresh the page after a short delay to show updated portfolio
+            setTimeout(() => {
+                window.location.reload();
+            }, 1500);
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            // Reset button
+            this.disabled = false;
+            this.textContent = 'Buy Stock';
+            
+            // Show error message
+            alert(error.message || 'An error occurred while processing your order.');
+        });
+    });
+
+    //  sell button
+    document.getElementById('confirmSellButton').addEventListener('click', function() {
+        // Similar implementation as the buy button
+        // ...
+        
+        // For now, show a notification that this is coming soon
+        alert('Sell functionality will be implemented in the next version!');
     });
 </script>
 
