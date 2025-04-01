@@ -52,6 +52,76 @@ virtual_stock_trading/
 ├── requirements.txt                     
 └── .env                           # Environment variables (not in version control)   
 ```
+<br>
+
+
+## ERD DIAGRAM
+```mermaid
+erDiagram
+    User ||--o{ Portfolio : owns
+    Portfolio ||--o{ Position : contains
+    Portfolio ||--o{ Transaction : records
+    Portfolio ||--o{ PortfolioSnapshot : tracks
+    Stock ||--o{ Position : included_in
+    Stock ||--o{ Transaction : involved_in
+    
+    User {
+        int id PK
+        string username
+        string email
+        string password
+        string first_name
+        string last_name
+        datetime date_joined
+        boolean is_active
+    }
+    
+    Portfolio {
+        int id PK
+        int user_id FK
+        string name
+        string description
+        decimal cash_balance
+        datetime created_at
+        datetime updated_at
+    }
+    
+    Stock {
+        int id PK
+        string symbol UK
+        string company_name
+        decimal last_price
+        datetime last_updated
+    }
+    
+    Position {
+        int id PK
+        int portfolio_id FK
+        int stock_id FK
+        int quantity
+        decimal average_buy_price
+    }
+    
+    Transaction {
+        int id PK
+        int portfolio_id FK
+        int stock_id FK
+        string transaction_type
+        int quantity
+        decimal price
+        datetime timestamp
+    }
+    
+    PortfolioSnapshot {
+        int id PK
+        int portfolio_id FK
+        date date
+        decimal total_value
+    }
+```
+
+<br>
+
 ## Features
 
 - User authentication and portfolio management
