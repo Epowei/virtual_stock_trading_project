@@ -61,7 +61,7 @@ class StockViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=False, methods=['get'])
     def search(self, request):
         """
-        Search for stocks by keyword through Alpha Vantage API.
+        Search for stocks by keyword through Finnhub API.
         """
         query = request.query_params.get('q', '')
         if not query:
